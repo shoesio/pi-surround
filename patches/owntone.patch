@@ -1,0 +1,410 @@
+diff --git a/src/input.h b/src/input.h
+--- a/src/input.h
++++ b/src/input.h
+@@ -1,3 +1,4 @@
++/* Pi Surround local modifications, 2026-10-23; see docs/UPSTREAM.md. */
+ 
+ #ifndef __INPUT_H__
+ #define __INPUT_H__
+@@ -178,6 +179,10 @@
+ int
+ input_read(void *data, size_t size, short *flag, void **flagdata);
+ 
++/* Opt-in for the dedicated Home Ambient 48k PCM16 stereo pipe only. */
++void
++input_live_buffer_configure(int milliseconds);
++
+ /*
+  * Player can set this to get a callback from the input when the input buffer
+  * is full. The player may use this to resume playback after an underrun.
+diff --git a/src/input.c b/src/input.c
+--- a/src/input.c
++++ b/src/input.c
+@@ -1,3 +1,4 @@
++/* Pi Surround local modifications, 2026-10-23; see docs/UPSTREAM.md. */
+ /*
+  * Copyright (C) 2017 Espen Jürgensen <espenjurgensen@gmail.com>
+  *
+@@ -38,6 +39,7 @@
+ #include "conffile.h"
+ #include "commands.h"
+ #include "input.h"
++#include "homeambient_live_buffer.h"
+ 
+ // Disallow further writes to the buffer when its size exceeds this threshold.
+ // The below gives us room to buffer 2 seconds of 48000/16/2 audio.
+@@ -115,6 +117,8 @@
+   // Locks for sharing the buffer between input and player thread
+   pthread_mutex_t mutex;
+   pthread_cond_t cond;
++  size_t live_target_bytes;
++  unsigned int live_log_ticks;
+ };
+ 
+ struct input_arg
+@@ -777,15 +781,57 @@
+ /* ---------------------- Interface towards player thread ------------------- */
+ /*                                Thread: player                              */
+ 
++void
++input_live_buffer_configure(int milliseconds)
++{
++  pthread_mutex_lock(&input_buffer.mutex);
++  input_buffer.live_target_bytes = (milliseconds >= 100 && milliseconds <= 500)
++    ? (size_t)milliseconds * 192 : 0;
++  input_buffer.live_log_ticks = 0;
++  pthread_mutex_unlock(&input_buffer.mutex);
++}
++
+ int
+ input_read(void *data, size_t size, short *flag, void **flagdata)
+ {
+   struct marker *marker;
+   int len;
++  uint8_t old_head[1920]; /* 10 ms of stereo PCM16 */
++  size_t fade_bytes = 0;
+ 
+   *flag = 0;
+ 
+   pthread_mutex_lock(&input_buffer.mutex);
++
++  if (input_buffer.live_target_bytes)
++    {
++      size_t queued = evbuffer_get_length(input_buffer.evbuf);
++      size_t before_marker = SIZE_MAX;
++      marker = input_buffer.marker_tail;
++      if (marker)
++        before_marker = marker->pos > input_buffer.bytes_read
++          ? marker->pos - input_buffer.bytes_read : 0;
++      size_t drop = ha_live_drop(queued, input_buffer.live_target_bytes, before_marker);
++      if (drop)
++        {
++          size_t wanted = size < sizeof(old_head) ? size : sizeof(old_head);
++          if (wanted > before_marker - drop)
++            wanted = before_marker - drop;
++          wanted -= wanted % 4;
++          if (wanted && evbuffer_copyout(input_buffer.evbuf, old_head, wanted) == (int)wanted)
++            fade_bytes = wanted;
++          evbuffer_drain(input_buffer.evbuf, drop);
++          input_buffer.bytes_read += drop;
++          DPRINTF(E_LOG, L_PLAYER, "HomeAmbient live input: trimmed %zu ms, queue now %zu ms\n",
++            drop / 192, (queued - drop) / 192);
++        }
++      if (++input_buffer.live_log_ticks >= 1000)
++        {
++          input_buffer.live_log_ticks = 0;
++          DPRINTF(E_LOG, L_PLAYER, "HomeAmbient live input: queue %zu ms, target %zu ms\n",
++            evbuffer_get_length(input_buffer.evbuf) / 192, input_buffer.live_target_bytes / 192);
++        }
++    }
+ 
+   // First we check if there is a marker in the requested samples. If there is,
+   // we only return data up until that marker. That way we don't have to deal
+@@ -811,6 +857,9 @@
+     }
+ 
+   input_buffer.bytes_read += len;
++
++  if (fade_bytes && len > 0)
++    ha_live_crossfade(data, old_head, (size_t)len < fade_bytes ? (size_t)len : fade_bytes);
+ 
+ #ifdef DEBUG_INPUT
+   // Logs if flags present or each 10 seconds
+@@ -1014,4 +1063,3 @@
+   evbuffer_free(input_buffer.evbuf);
+   event_base_free(evbase_input);
+ }
+-
+diff --git a/src/player.c b/src/player.c
+--- a/src/player.c
++++ b/src/player.c
+@@ -1,3 +1,4 @@
++/* Pi Surround local modifications, 2026-10-23; see docs/UPSTREAM.md. */
+ /*
+  * Copyright (C) 2016-2019 Espen Jürgensen <espenjurgensen@gmail.com>
+  * Copyright (C) 2010-2011 Julien BLACHE <jb@jblache.org>
+@@ -2495,9 +2496,26 @@
+   return COMMAND_END;
+ }
+ 
++
++/* Rare transport events only; disabled unless explicitly requested. */
++static double
++ha_flush_diagnostic_time(void)
++{
++  struct timespec ts;
++  const char *enabled = getenv("HOMEAMBIENT_PAUSE_FLUSH_DIAGNOSTICS");
++  if (!enabled || strcmp(enabled, "1") != 0)
++    return -1.0;
++  if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0)
++    return -1.0;
++  return (double)ts.tv_sec + (double)ts.tv_nsec / 1000000000.0;
++}
++
+ static enum command_state
+ playback_flush(void *arg, int *retval)
+ {
++  double diagnostic_at = ha_flush_diagnostic_time();
++  if (diagnostic_at >= 0)
++    DPRINTF(E_LOG, L_PLAYER, "HA_PAUSE_FLUSH player_request mono=%.9f player_state=%d\n", diagnostic_at, player_state);
+   if (player_state == PLAY_STOPPED)
+     {
+       *retval = -1;
+diff --git a/src/outputs/airplay_events.c b/src/outputs/airplay_events.c
+--- a/src/outputs/airplay_events.c
++++ b/src/outputs/airplay_events.c
+@@ -1,3 +1,4 @@
++/* Pi Surround local modifications, 2026-10-23; see docs/UPSTREAM.md. */
+ /*
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -338,12 +339,17 @@
+   switch (event)
+     {
+       case AIRPLAY_EVENT_PLAY:
++        DPRINTF(E_LOG, L_AIRPLAY, "HomeAmbient event PLAY: state=%d action=%s\n",
++                status.status, status.status == PLAY_PLAYING ? "none" : "start");
++        if (status.status != PLAY_PLAYING)
++          player_playback_start();
++        break;
+       case AIRPLAY_EVENT_PAUSE:
+-	if (status.status == PLAY_PLAYING)
+-	  player_playback_pause();
+-	else
+-	  player_playback_start();
+-	break;
++        DPRINTF(E_LOG, L_AIRPLAY, "HomeAmbient event PAUSE: state=%d action=%s\n",
++                status.status, status.status == PLAY_PLAYING ? "pause" : "none");
++        if (status.status == PLAY_PLAYING)
++          player_playback_pause();
++        break;
+       case AIRPLAY_EVENT_NEXT:
+ 	player_playback_next();
+ 	break;
+@@ -443,6 +449,7 @@
+ 
+   evbuffer_drain(client->pending, -1);
+ 
++  DPRINTF(E_LOG, L_AIRPLAY, "HomeAmbient event received: peer='%s' event=%d\n", client->name, event);
+   handle_event(event);
+ 
+   ret = respond(client);
+diff --git a/src/outputs/airplay.c b/src/outputs/airplay.c
+--- a/src/outputs/airplay.c
++++ b/src/outputs/airplay.c
+@@ -1,3 +1,4 @@
++/* Pi Surround local modifications, 2026-10-23; see docs/UPSTREAM.md. */
+ /*
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -239,6 +240,8 @@
+ 
+ struct airplay_session
+ {
++  uint64_t ha_flush_generation;
++  struct timespec ha_flush_requested;
+   uint64_t device_id;
+   int callback_id;
+ 
+@@ -495,6 +498,20 @@
+ 
+ /* ------------------------------- MISC HELPERS ----------------------------- */
+ 
++
++/* Rare transport events only; disabled unless explicitly requested. */
++static double
++ha_flush_diagnostic_time(void)
++{
++  struct timespec ts;
++  const char *enabled = getenv("HOMEAMBIENT_PAUSE_FLUSH_DIAGNOSTICS");
++  if (!enabled || strcmp(enabled, "1") != 0)
++    return -1.0;
++  if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0)
++    return -1.0;
++  return (double)ts.tv_sec + (double)ts.tv_nsec / 1000000000.0;
++}
++
+ static inline int
+ alac_encode(struct evbuffer *evbuf, struct encode_ctx *encode_ctx, uint8_t *rawbuf, size_t rawbuf_size, int nsamples, struct media_quality *quality)
+ {
+@@ -3251,6 +3268,11 @@
+ static enum airplay_seq_type
+ response_handler_flush(struct evrtsp_request *req, struct airplay_session *session)
+ {
++  double diagnostic_at = ha_flush_diagnostic_time();
++  if (diagnostic_at >= 0)
++    DPRINTF(E_LOG, L_AIRPLAY, "HA_PAUSE_FLUSH device_response mono=%.9f device=%" PRIu64 " generation=%" PRIu64 " request_mono=%ld.%09ld status=%d\n",
++      diagnostic_at, session->device_id, session->ha_flush_generation,
++      (long)session->ha_flush_requested.tv_sec, (long)session->ha_flush_requested.tv_nsec, req->response_code);
+   session->state = AIRPLAY_STATE_CONNECTED;
+   return AIRPLAY_SEQ_CONTINUE;
+ }
+@@ -4188,9 +4210,15 @@
+ {
+   struct airplay_session *session = device->session;
+ 
++  double diagnostic_at = ha_flush_diagnostic_time();
++  if (diagnostic_at >= 0)
++    DPRINTF(E_LOG, L_AIRPLAY, "HA_PAUSE_FLUSH device_request mono=%.9f device=%" PRIu64 " state=%d eligible=%d\n",
++      diagnostic_at, session->device_id, session->state, session->state == AIRPLAY_STATE_STREAMING);
+   if (session->state != AIRPLAY_STATE_STREAMING)
+     return 0; // No-op, nothing to flush
+ 
++  session->ha_flush_generation++;
++  clock_gettime(CLOCK_MONOTONIC, &session->ha_flush_requested);
+   session->callback_id = callback_id;
+ 
+   sequence_start(AIRPLAY_SEQ_FLUSH, session, NULL, "flush");
+diff --git a/src/inputs/pipe.c b/src/inputs/pipe.c
+--- a/src/inputs/pipe.c
++++ b/src/inputs/pipe.c
+@@ -1,3 +1,4 @@
++/* Pi Surround local modifications, 2026-10-23; see docs/UPSTREAM.md. */
+ /*
+  * Copyright (C) 2017 Espen Jurgensen
+  *
+@@ -35,6 +36,7 @@
+ #endif
+ 
+ #include <stdio.h>
++#include <time.h>
+ #include <stdlib.h>
+ #include <stdbool.h>
+ #include <unistd.h>
+@@ -189,6 +191,20 @@
+   return pipe;
+ }
+ 
++
++/* Rare transport events only; disabled unless explicitly requested. */
++static double
++ha_flush_diagnostic_time(void)
++{
++  struct timespec ts;
++  const char *enabled = getenv("HOMEAMBIENT_PAUSE_FLUSH_DIAGNOSTICS");
++  if (!enabled || strcmp(enabled, "1") != 0)
++    return -1.0;
++  if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0)
++    return -1.0;
++  return (double)ts.tv_sec + (double)ts.tv_nsec / 1000000000.0;
++}
++
+ static void
+ pipe_free(struct pipe *pipe)
+ {
+@@ -250,7 +266,10 @@
+   if (pipe->fd < 0)
+     return -1;
+ 
+-  pipe->ev = event_new(evbase_pipe, pipe->fd, EV_READ, pipe->cb, pipe);
++  /* Metadata watches are created on a worker, including when autostart is
++   * disabled and the PCM watcher event loop does not exist. */
++  struct event_base *watch_base = pipe->type == PIPE_METADATA ? worker_evbase_get() : evbase_pipe;
++  pipe->ev = event_new(watch_base, pipe->fd, EV_READ, pipe->cb, pipe);
+   if (!pipe->ev)
+     {
+       DPRINTF(E_LOG, L_PLAYER, "Could not watch pipe for new data '%s'\n", pipe->path);
+@@ -893,7 +912,15 @@
+   if (message & PIPE_METADATA_MSG_VOLUME)
+     player_volume_set(pipe_metadata.prepared.volume);
+   if (message & PIPE_METADATA_MSG_FLUSH)
+-    player_playback_flush();
++    {
++      double diagnostic_at = ha_flush_diagnostic_time();
++      if (diagnostic_at >= 0)
++        DPRINTF(E_LOG, L_PLAYER, "HA_PAUSE_FLUSH metadata_received mono=%.9f\n", diagnostic_at);
++      int flush_result = player_playback_flush();
++      diagnostic_at = ha_flush_diagnostic_time();
++      if (diagnostic_at >= 0)
++        DPRINTF(E_LOG, L_PLAYER, "HA_PAUSE_FLUSH metadata_completed mono=%.9f result=%d\n", diagnostic_at, flush_result);
++    }
+ 
+  readd:
+   if (pipe_metadata.pipe && pipe_metadata.pipe->ev)
+@@ -1050,6 +1077,22 @@
+   source->quality.bits_per_sample = pipe_bits_per_sample;
+   source->quality.channels = 2;
+ 
++  /* This experiment is disabled unless the exact dedicated pipe and format
++   * match AND an explicit config file supplies a bounded target. */
++  int live_ms = 0;
++  if (strcmp(source->path, "/var/lib/homeambient-plan-b/media/front.pcm") == 0
++      && pipe_sample_rate == 48000 && pipe_bits_per_sample == 16)
++    {
++      FILE *live_config = fopen("/opt/homeambient-plan-b/live-input-buffer-ms", "r");
++      if (live_config)
++        {
++          if (fscanf(live_config, "%d", &live_ms) != 1)
++            live_ms = 0;
++          fclose(live_config);
++        }
++    }
++  input_live_buffer_configure(live_ms);
++
+   return 0;
+ }
+ 
+@@ -1060,6 +1103,8 @@
+   union pipe_arg *cmdarg;
+ 
+   DPRINTF(E_DBG, L_PLAYER, "Stopping pipe\n");
++
++  input_live_buffer_configure(0);
+ 
+   if (source->evbuf)
+     evbuffer_free(source->evbuf);
+diff --git a/src/homeambient_live_buffer.h b/src/homeambient_live_buffer.h
+new file mode 100644
+--- /dev/null
++++ b/src/homeambient_live_buffer.h
+@@ -0,0 +1,50 @@
++/* Pi Surround local modifications, 2026-10-23; see docs/UPSTREAM.md. */
++/* Home Ambient live PCM queue helpers. GPL-2.0-or-later, like OwnTone. */
++#ifndef HOMEAMBIENT_LIVE_BUFFER_H
++#define HOMEAMBIENT_LIVE_BUFFER_H
++#include <stddef.h>
++#include <stdint.h>
++
++/* Fixed 48 kHz stereo PCM16: 192 bytes per millisecond, 4 per frame.
++ * Leave 80 ms hysteresis for normal delivery bursts. Never cross a marker. */
++static inline size_t
++ha_live_drop(size_t queued, size_t target, size_t before_marker)
++{
++  size_t drop;
++  if (!target || queued <= target || queued - target <= 80 * 192)
++    return 0;
++  drop = queued - target;
++  if (drop > before_marker)
++    drop = before_marker;
++  return drop - drop % 4;
++}
++
++static inline int32_t
++ha_pcm16_read(const uint8_t *p)
++{
++  uint32_t value = (uint32_t)p[0] | ((uint32_t)p[1] << 8);
++  return value >= 32768 ? (int32_t)value - 65536 : (int32_t)value;
++}
++
++/* Blend the old head into the new head after a rare catch-up. No allocation,
++ * channel swapping, or discontinuous jump at the beginning of the splice. */
++static inline void
++ha_live_crossfade(uint8_t *current, const uint8_t *old, size_t bytes)
++{
++  size_t frames = bytes / 4;
++  if (frames < 2)
++    return;
++  for (size_t frame = 0; frame < frames; frame++)
++    for (size_t channel = 0; channel < 2; channel++)
++      {
++        size_t index = frame * 4 + channel * 2;
++        int32_t a = ha_pcm16_read(old + index);
++        int32_t b = ha_pcm16_read(current + index);
++        int32_t sample = (int32_t)(((int64_t)a * (int64_t)(frames - 1 - frame)
++                        + (int64_t)b * (int64_t)frame) / (int64_t)(frames - 1));
++        uint16_t bits = (uint16_t)sample;
++        current[index] = bits & 255;
++        current[index + 1] = bits >> 8;
++      }
++}
++#endif

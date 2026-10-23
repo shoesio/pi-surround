@@ -1,0 +1,66 @@
+general =
+{
+    name = "Pi Surround";
+    service_type = "airplay2";
+    output_backend = "alsa";
+    mdns_backend = "avahi";
+    interpolation = "vernier";
+    drift_tolerance_in_seconds = 0.001;
+    resync_threshold_in_seconds = 0.050;
+
+    // Retained 500 ms front-buffer profile. Keep timing values coordinated;
+    // see docs/TIMING.md. These values are hardware-specific.
+    audio_backend_latency_offset_in_seconds = -0.540;
+
+    six_channel_mode = "on";
+    eight_channel_mode = "on";
+    mixdown = "off";
+    output_channel_mapping = ( "FL", "FR", "FC", "LFE", "BL", "BR", "SL", "SR" );
+
+    ignore_volume_control = "yes";
+    // Shared gain is handled by the companion service, not native attenuation.
+    run_this_when_volume_is_set = "/opt/homeambient-plan-b/airplay-volume";
+    default_airplay_volume = -15.0;
+    volume_max_db = 0.0;
+};
+
+sessioncontrol =
+{
+    run_this_before_entering_active_state = "/opt/homeambient-plan-b/session-state active";
+    run_this_after_exiting_active_state = "/opt/homeambient-plan-b/session-state inactive";
+    active_state_timeout = 5.0;
+    wait_for_completion = "yes";
+};
+
+alsa =
+{
+    output_device = "hw:HomeAmbient,0,0";
+    output_rate = 48000;
+    output_format = "S16_LE";
+    output_channels = 8;
+    period_size = 960;
+    buffer_size = 3840;
+    use_precision_timing = "no";
+};
+
+metadata =
+{
+    enabled = "yes";
+    include_cover_art = "yes";
+    progress_interval = 1.0;
+};
+
+mqtt =
+{
+    enabled = "no";
+};
+
+diagnostics =
+{
+    statistics = "yes";
+    log_verbosity = 2;
+    log_show_file_and_line = "yes";
+    log_show_time_since_startup = "yes";
+    log_show_time_since_last_message = "yes";
+    get_plist_metadata = "yes";
+};

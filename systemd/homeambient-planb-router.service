@@ -1,0 +1,16 @@
+[Unit]
+Description=HomeAmbient Pi 2 front and wired rear mixer
+After=sound.target
+[Service]
+User=pi
+SupplementaryGroups=audio
+RuntimeDirectory=homeambient-plan-b homeambient-volume
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+EnvironmentFile=/opt/homeambient-plan-b/wired.env
+ExecCondition=/usr/bin/test -f /run/homeambient-plan-b/session-active
+ExecStartPre=+/sbin/modprobe snd-aloop index=8 id=HomeAmbient
+ExecStart=/usr/bin/python3 /opt/homeambient-plan-b/wired_router.py --capture-device hw:HomeAmbient,1,0 --front-fifo /var/lib/homeambient-plan-b/media/front.pcm --rear-device ${REAR_DEVICE} --rear-delay-ms ${REAR_DELAY_MS} --rear-status /run/homeambient-plan-b/rear.json
+Restart=no
+Nice=-5
+TimeoutStopSec=5

@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+build/
+.venv/
+*.so
+*.dylib
+*.wav
+*.pcm
+*.pcap*
+*.db
+*.db-*
+apple-tv.json
+settings.json
+network.env
+*.log
+credentials*
+.DS_Store

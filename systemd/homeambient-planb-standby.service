@@ -1,0 +1,10 @@
+[Unit]
+Description=HomeAmbient passive TV output selection watcher
+After=network-online.target homeambient-planb-source.service
+Wants=network-online.target homeambient-planb-source.service
+[Service]
+ExecStart=/opt/homeambient-plan-b/control-env/bin/python /opt/homeambient-plan-b/standby_watch.py
+Restart=on-failure
+RestartSec=5
+[Install]
+WantedBy=multi-user.target

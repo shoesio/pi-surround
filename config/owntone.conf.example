@@ -1,0 +1,38 @@
+# Upstream OwnTone syntax; retained baseline, user-specific names removed.
+general {
+	uid = "pi"
+	db_path = "/var/lib/homeambient-plan-b/cache/database.db"
+	db_backup_path = "/var/lib/homeambient-plan-b/cache/database.bak"
+	logfile = "/var/lib/homeambient-plan-b/cache/owntone.log"
+	loglevel = log
+	trusted_networks = { "localhost" }
+	ipv6 = no
+	cache_dir = "/var/lib/homeambient-plan-b/cache"
+	start_buffer_ms = 500
+	user_agent = "AirPlay/380.20.1"
+}
+library {
+	name = "Home Ambient Pi 2 Fronts"
+	port = 3689
+	directories = { "/var/lib/homeambient-plan-b/media" }
+	podcasts = { "/Podcasts" }
+	audiobooks = { "/Audiobooks" }
+	compilations = { "/Compilations" }
+	compilation_artist = "Various Artists"
+	pipe_autostart = false
+	pipe_sample_rate = 48000
+	pipe_bits_per_sample = 16
+}
+audio {
+	nickname = "Computer"
+}
+spotify {
+}
+mpd {
+}
+sqlite {
+}
+streaming {
+}
+airplay "REPLACE_FRONT_LEFT_NAME" { ptp_disable = true }
+airplay "REPLACE_FRONT_RIGHT_NAME" { ptp_disable = true }

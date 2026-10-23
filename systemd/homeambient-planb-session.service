@@ -1,0 +1,9 @@
+[Unit]
+Description=HomeAmbient Pi 2 explicit surround session
+After=network-online.target
+Wants=network-online.target
+[Service]
+ExecStart=/opt/homeambient-plan-b/control-env/bin/python /opt/homeambient-plan-b/wired_session.py
+ExecStopPost=/usr/bin/systemctl stop homeambient-planb-fronts.service homeambient-planb-router.service homeambient-planb-network.service
+Restart=no
+TimeoutStopSec=45

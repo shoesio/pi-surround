@@ -1,0 +1,10 @@
+{
+  "kind": "coupled-master-persistent-v1",
+  "fixed_programme_gain": 0.125,
+  "initial_percent": 20,
+  "ceiling": 100,
+  "anchor_command": -24,
+  "respect_saved_front_level": true,
+  "persistent_volume_api": true,
+  "prime_native_controls": true
+}

@@ -1,0 +1,11 @@
+[Unit]
+Description=HomeAmbient Pi 2 OwnTone front sender
+After=homeambient-planb-network.service avahi-daemon.service
+Requires=homeambient-planb-network.service avahi-daemon.service
+BindsTo=homeambient-planb-network.service
+[Service]
+ExecCondition=/usr/bin/test -f /run/homeambient-plan-b/session-active
+NetworkNamespacePath=/run/netns/homeambient-fronts
+ExecStart=/opt/homeambient-plan-b/sbin/owntone -f -c /opt/homeambient-plan-b/owntone.conf -P /run/homeambient-plan-b/owntone.pid
+Restart=no
+TimeoutStopSec=10

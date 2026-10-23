@@ -1,0 +1,9 @@
+[Unit]
+Description=HomeAmbient front sender isolated AirPlay timing network
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/opt/homeambient-plan-b/front-network up
+ExecStop=/opt/homeambient-plan-b/front-network down
+RemainAfterExit=yes

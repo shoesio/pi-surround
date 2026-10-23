@@ -1,0 +1,11 @@
+[Unit]
+Description=Hold Pi audio CPU at its configured maximum frequency
+After=sysinit.target
+Before=homeambient-planb-session.service
+PartOf=homeambient-planb-session.service
+[Service]
+Type=oneshot
+ExecCondition=/usr/bin/test -w /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+ExecStart=/bin/sh -c 'echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor'
+ExecStop=/bin/sh -c 'echo ondemand > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor'
+RemainAfterExit=yes

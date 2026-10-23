@@ -1,0 +1,3 @@
+# Published version compared against the private checkpoint: 173 files identical.
+pyatv==0.18.0
+# The audio worker uses system Python and the OS python3-numpy package instead.

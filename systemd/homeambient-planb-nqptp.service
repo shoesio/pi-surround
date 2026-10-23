@@ -1,0 +1,6 @@
+[Unit]
+Description=HomeAmbient Pi 2 receiver timing
+After=network-online.target
+[Service]
+ExecStart=/opt/homeambient-plan-b/bin/nqptp
+Restart=no

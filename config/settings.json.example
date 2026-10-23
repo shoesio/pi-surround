@@ -1,0 +1,19 @@
+{
+  "maintenance_approved": false,
+  "router_id": "REPLACE_PI_AIRPLAY_ID",
+  "receiver_address": "REPLACE_PI_LAN_ADDRESS",
+  "front_output_ids": [
+    "REPLACE_OWNTONE_LEFT_ID",
+    "REPLACE_OWNTONE_RIGHT_ID"
+  ],
+  "native_homepod_ids": [
+    "REPLACE_NATIVE_LEFT_ID",
+    "REPLACE_NATIVE_RIGHT_ID"
+  ],
+  "front_level": 100,
+  "rear_trim_db": 0,
+  "centre_enabled": false,
+  "centre_output_id": null,
+  "centre_trim_db": 0.0,
+  "centre_offset_ms": 10
+}

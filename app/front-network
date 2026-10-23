@@ -1,0 +1,27 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Public packaging: site network settings moved out of source, 2026-10-23.
+set -Eeuo pipefail
+source /opt/homeambient-plan-b/network.env
+: "${FRONT_PARENT:?}" "${FRONT_ADDRESS:?}" "${FRONT_GATEWAY:?}"
+case "${1:-}" in
+up)
+  [[ ! -e /run/netns/homeambient-fronts ]] || { echo 'Namespace exists; inspect first'; exit 1; }
+  [[ ! -d /sys/class/net/"$FRONT_PARENT"/wireless ]] || { echo 'This macvlan profile requires Ethernet'; exit 1; }
+  # Reserve this address in the router first. Ping silence does not prove it unused.
+  if ping -c 1 -W 1 "${FRONT_ADDRESS%/*}" >/dev/null 2>&1; then
+    echo 'Front sender address responds; refusing possible overlap'; exit 1
+  fi
+  ip netns add homeambient-fronts
+  trap 'ip netns del homeambient-fronts || true' ERR
+  ip link add ha-fronts0 link "$FRONT_PARENT" type macvlan mode bridge
+  ip link set ha-fronts0 netns homeambient-fronts
+  ip -n homeambient-fronts addr add "$FRONT_ADDRESS" dev ha-fronts0
+  ip netns exec homeambient-fronts sysctl -q -w net.ipv4.ip_unprivileged_port_start=0
+  ip -n homeambient-fronts link set lo up
+  ip -n homeambient-fronts link set ha-fronts0 up
+  ip -n homeambient-fronts route add default via "$FRONT_GATEWAY"
+  ;;
+down) ip netns del homeambient-fronts ;;
+*) exit 2 ;;
+esac

@@ -1,0 +1,16 @@
+[Unit]
+Description=HomeAmbient Pi 2 multichannel AirPlay receiver
+After=homeambient-planb-nqptp.service avahi-daemon.service
+Requires=homeambient-planb-nqptp.service avahi-daemon.service
+[Service]
+User=pi
+SupplementaryGroups=audio
+RuntimeDirectory=homeambient-plan-b homeambient-volume
+RuntimeDirectoryPreserve=yes
+ExecStartPre=+/sbin/modprobe snd-aloop index=8 id=HomeAmbient
+ExecStart=/opt/homeambient-plan-b/bin/shairport-sync -c /opt/homeambient-plan-b/shairport-sync.conf
+Restart=no
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target

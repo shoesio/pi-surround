@@ -1,0 +1,50 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Public packaging: device identities moved to site settings, 2026-10-23.
+"""Validate and atomically publish AirPlay master attenuation; no audio restart."""
+import math
+import json
+import time
+import os
+import sys
+import tempfile
+
+def attenuation(value):
+    value = float(value)
+    if not math.isfinite(value) or not (value == -144 or -30 <= value <= 0):
+        raise ValueError("Invalid AirPlay volume")
+    return value
+
+def record_command(value):
+    """Best-effort bounded numeric diagnostic in RAM, after publishing gain."""
+    path = "/run/homeambient-volume/commands.jsonl"
+    try:
+        if os.path.exists(path) and os.stat(path).st_size > 131072:
+            os.replace(path, path + ".1")
+        line = json.dumps({"timestamp":time.time(),"monotonic":time.monotonic(),
+                           "command":value,"pid":os.getpid()}) + "\n"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NONBLOCK, 0o644)
+        try:
+            os.write(fd, line.encode())
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
+
+if __name__ == "__main__":
+    value = attenuation(sys.argv[1])
+    directory = "/run/homeambient-volume"
+    fd, path = tempfile.mkstemp(dir=directory)
+    try:
+        # Privileged controls must leave the atomic command readable by the
+        # runtime directory's audio user, just like the receiver's own hook.
+        if os.geteuid() == 0:
+            owner = os.stat(directory)
+            os.fchown(fd, owner.st_uid, owner.st_gid)
+        with os.fdopen(fd, "w") as output:
+            output.write(f"{value:.6f}\n")
+        os.replace(path, directory + "/airplay-db")
+        record_command(value)
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
