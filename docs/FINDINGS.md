@@ -44,6 +44,15 @@ were all observed at different times. They must not all be labelled spontaneous
 buffer starvation. A single logged underrun without a matching audible event
 does not prove the listener's reported fault.
 
+## Control reliability update — 24 October 2026
+
+Slow volume-control operations could expire the rear gain instruction, and a
+failed volume write could consume a key without applying its requested level.
+The controller now maintains the applied gain independently and retries
+unconfirmed intent. See [test results and limits](CONTROL-RELIABILITY.md).
+The existing startup key initialization is retained. These corrections do not
+resolve every possible analogue rear dropout or certify acoustic sync.
+
 ## Still open
 
 - Small onset gap and exact audible pause-stop timing.

@@ -1,5 +1,14 @@
 # Changes
 
+## Unreleased — 24 October 2026
+
+Keep the rear gain instruction fresh during slow native-volume operations; retry
+unconfirmed volume requests after transport failure; move steady playback HTTP
+checks off the controller event loop. Retain the physical-key startup initialization
+and add separate playback-state/route diagnostics. No timing, buffering, mixer or
+calibration changes. Includes device-free regressions and measured reference-system
+test limits in [Control reliability](docs/CONTROL-RELIABILITY.md).
+
 ## 0.1.0-preview.1 — 23 October 2026
 
 First locally prepared source preview, based on the retained 500 ms household

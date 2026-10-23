@@ -332,10 +332,10 @@ async def run():
             rear=json.loads((RUNTIME/'rear.json').read_text())
             if time.time()-rear.get('timestamp',0)>3 or rear.get('error'):
                 raise RuntimeError('Wired rear health became stale or failed')
-            outputs=api('outputs')['outputs']
+            outputs=(await asyncio.to_thread(api,'outputs'))['outputs']
             selected={str(o['id']) for o in outputs if o.get('selected')}
             missing=EXPECTED-selected
-            front_playing=api('player').get('state')=='play'
+            front_playing=(await asyncio.to_thread(api,'player')).get('state')=='play'
             test_marker=RUNTIME/'front-diagnostic'
             diagnostic=test_marker.exists() and time.time()-test_marker.stat().st_mtime<60
             recovery_now=time.monotonic()
@@ -352,8 +352,8 @@ async def run():
             if not diagnostic and recovery_due and now-last_retry>5:
                 if attempts>=3:raise RuntimeError('Front recovery limit reached; releasing speakers')
                 startup_trace('front_recovery_requested',attempt=attempts+1,missing_count=len(missing),front_playing=front_playing)
-                for output in missing:api('outputs/'+output,{'selected':True})
-                if not front_playing:api('player/play',method='PUT')
+                for output in missing:await asyncio.to_thread(api,'outputs/'+output,{'selected':True})
+                if not front_playing:await asyncio.to_thread(api,'player/play',method='PUT')
                 attempts+=1;last_retry=now
             if recovery_decision=='resume' and not diagnostic:
                 await recovery_playback.resume(atv,router,owner_allowed,startup_trace,clock=time.monotonic)

@@ -1,6 +1,6 @@
 {
   "checkpoint": "2026-10-23 500ms listener-tested profile",
-  "runtime_modified": false,
+  "runtime_modified": true,
   "receiver_base": "7bad231c18368dbd26f298577f6210e36e4b0797",
   "owntone_base": "29.3",
   "owntone_base_archive_sha256": "b6677812d3535b9aab2889234ecff4b059d33723e94b3fb54e4e01a67a7bdabf",
@@ -64,7 +64,8 @@
     {
       "file": "app/native_master.py",
       "checkpoint_sha256": "b890a67ada025e4c32afc52a0a14c847c20c66f8d5b61497374d8bbdd7e397a7",
-      "changes": "licence header; configuration-driven device identities where applicable; corrected obsolete comments/diagnostic storage path"
+      "changes": "licence header; configuration-driven device identities where applicable; corrected obsolete comments/diagnostic storage path; control reliability correction 2026-10-24 (see docs/CONTROL-RELIABILITY.md)",
+      "reference_update_sha256": "d12f15beb5426df7eba1281b38af1eafa294b512a1224dfe01d485c825e11ef6"
     },
     {
       "file": "app/pause_ack.py",
@@ -179,7 +180,8 @@
     {
       "file": "app/wired_session.py",
       "checkpoint_sha256": "9a15e36a23230c08ac4a260bd20caefc199385b96f68ff3beb188a9511262a07",
-      "changes": "licence header; configuration-driven device identities where applicable; corrected obsolete comments/diagnostic storage path"
+      "changes": "licence header; configuration-driven device identities where applicable; corrected obsolete comments/diagnostic storage path; control reliability correction 2026-10-24 (see docs/CONTROL-RELIABILITY.md)",
+      "reference_update_sha256": "47da260cc106a2dca4e6cf9f80610802d186332294ddeb41f664a350dabd9b19"
     },
     {
       "file": "native/wired_dsp.c",
@@ -197,5 +199,17 @@
   "nqptp_source_verification": {
     "source_and_build_inputs_matched": 16,
     "installed_executable_sha256": "d6db6f0ee7c0dbde2f27867116876251abd9613ef3319def171a203bf79531f4"
+  },
+  "integration_update": {
+    "date": "2026-10-24",
+    "scope": [
+      "native rear-gain publication",
+      "retry unconfirmed volume intent",
+      "nonblocking steady playback health requests",
+      "startup guard diagnostics"
+    ],
+    "timing_dsp_or_buffer_changes": false,
+    "reference_system_tested": true,
+    "clean_install_tested": false
   }
 }

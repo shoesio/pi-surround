@@ -59,3 +59,16 @@ future binary/image distribution needs a fresh dependency/licence review.
 
 The source preview may be shared as experimental after review; these remaining
 checks prevent presenting it as a turnkey or universally reliable appliance.
+
+## Main-branch control update — 24 October 2026
+
+The control reliability correction changes two integration modules, with four
+additional device-free regressions. All ten public tests pass. The publication
+scanner reports no findings, and comparison against private credential/device
+values found no matches. Public identity configuration remains in place; no raw
+runtime logs, recordings, pairing files or household settings are added.
+
+The corresponding control changes were exercised on the reference system;
+[Control reliability](CONTROL-RELIABILITY.md) records fault injection, handover,
+volume tests and their limits. The sanitized package remains untested as a clean
+installation. The original preview tag and release assets are unchanged.

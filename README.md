@@ -39,6 +39,9 @@ supplies a rear bus. A stereo rear soundbar does not create separately placed
 rear speakers. This is not a Dolby-certified renderer, and it does not turn
 HomePods into Apple's native multichannel home-theatre system.
 
+The main branch also contains the [24 October control reliability correction](docs/CONTROL-RELIABILITY.md).
+These changes are newer than the `v0.1.0-preview.1` release archive.
+
 ## Reference hardware
 
 - Raspberry Pi 2B, Raspberry Pi OS Bookworm, 32-bit ARM userland.

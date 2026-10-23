@@ -53,7 +53,7 @@ class NativeController:
   self.atv=atv;self.homepod=homepod;self.router=router;self.trace=trace
   from volume_api import VolumeAPI
   self.front_ids=front_output_ids();self.stream_api=VolumeAPI(self.front_ids);self.last_stream_check=0.
-  self.failures=0;self.last_reconnect=0.;self.audio=None;self.policy=None;self.error=None;self.hold_reason=None;self.task=None
+  self.failures=0;self.last_reconnect=0.;self.audio=None;self.policy=None;self.error=None;self.hold_reason=None;self.task=None;self.gain_task=None
   self.command_path=pathlib.Path('/run/homeambient-volume/airplay-db');self.owned=False;self.observed=0.;self.current_gain=0.;self.last_ok=0.;self.last_event=None
  @classmethod
  async def prepare(cls,atv,router,trace):
@@ -122,7 +122,10 @@ class NativeController:
   # Front sessions are still unselected. Prove a distinct real command first.
   async def valid():
    p=await asyncio.wait_for(self.atv.metadata.playing(),3)
-   return p.device_state.name in ('Paused','Idle','Stopped') and {d.identifier for d in self.atv.audio.output_devices}=={self.router}
+   owned={d.identifier for d in self.atv.audio.output_devices}=={self.router}
+   paused=p.device_state.name in ('Paused','Idle','Stopped')
+   self.trace('native_seed_checkpoint',playback_state=p.device_state.name,owns_route=owned,eligible=owned and paused)
+   return owned and paused
   if not await valid():raise RuntimeError('Native seed requires paused/idle Pi-only route')
   # Initialise Apple's physical-key context before OwnTone owns the fronts.
   # Never assume a particular relative step; seed the observed original level.
@@ -161,8 +164,24 @@ class NativeController:
  def set_gain(self,gain):
   self.current_gain=gain;path=RT/'coupled-rear-gain.json';tmp=path.with_suffix('.native-tmp')
   tmp.write_text(json.dumps(dict(gain=gain,timestamp=time.time())));tmp.chmod(0o644);os.replace(tmp,path)
- def start(self):self.task=asyncio.create_task(self.run())
+ async def refresh_gain(self):
+  # Native read/write latency must not expire the independent rear instruction.
+  # Only publish the already-applied level: this task never raises the volume.
+  while True:
+   gain=self.current_gain
+   if not self.owned or time.monotonic()-self.observed>3:
+    gain=0.
+   else:
+    try:
+     if fraction(self.command_path.read_text())==0:gain=0.
+    except (OSError,ValueError):gain=0.
+   self.set_gain(gain)
+   await asyncio.sleep(.1)
+ def start(self):
+  self.gain_task=asyncio.create_task(self.refresh_gain())
+  self.task=asyncio.create_task(self.run())
  def stop(self):
+  if self.gain_task:self.gain_task.cancel()
   if self.task:self.task.cancel()
   else:asyncio.create_task(self.close())
   self.set_gain(0.)
@@ -173,6 +192,7 @@ class NativeController:
  async def run(self):
   try:
    while True:
+    checkpoint=(self.policy.native,self.policy.command,self.policy.master,self.policy.level)
     try:
      if not self.owned or time.monotonic()-self.observed>3:self.set_gain(0.);await asyncio.sleep(.2);continue
      value=await self.read_native();command=float(self.command_path.read_text());settings=json.loads((ROOT/'settings.json').read_text());level=settings['front_level']
@@ -205,9 +225,11 @@ class NativeController:
      self.failures+=1
      self.hold_reason=type(e).__name__+': '+str(e)
      if self.hold_reason!=self.last_event:self.trace('native_master_hold',reason=self.hold_reason);self.last_event=self.hold_reason
+     # An unacknowledged key remains pending; retry it after transport recovery.
+     # Otherwise a transient API failure consumes the command permanently.
+     self.policy.native,self.policy.command,self.policy.master,self.policy.level=checkpoint
      self.policy.pending=None
-     self.policy.master=locals().get("previous_master",self.policy.master)
-     if time.monotonic()-self.last_ok>3 or fraction(self.command_path.read_text())==0:self.set_gain(0.)
+     if not self.owned or time.monotonic()-self.observed>3 or fraction(self.command_path.read_text())==0:self.set_gain(0.)
      else:self.set_gain(self.current_gain)
      if self.failures>=3 and time.monotonic()-self.last_reconnect>10:
       self.last_reconnect=time.monotonic()
@@ -218,4 +240,9 @@ class NativeController:
        await self.reconnect()
       except Exception:pass
     await asyncio.sleep(.08)
-  finally:await self.close()
+  finally:
+   if self.gain_task:
+    self.gain_task.cancel()
+    await asyncio.gather(self.gain_task,return_exceptions=True)
+   self.set_gain(0.)
+   await self.close()
